@@ -7,8 +7,13 @@ module edge_detector #(
 );
     // TODO: implement a multi-bit edge detector that detects a rising edge of 'signal_in[x]'
     // and outputs a one-cycle pulse 'edge_detect_pulse[x]' at the next clock edge
-    // Feel free to use as many number of registers you like
+    reg [31:0] signal_in_prev;
+
+    always @(posedge clk) begin
+	    signal_in_prev <= signal_in;
+    end
+
+    assign edge_detect_pulse = ~signal_in_prev & signal_in;
 
     // Remove this line once you create your edge detector
-    assign edge_detect_pulse = 0;
 endmodule
