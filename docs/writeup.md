@@ -28,8 +28,8 @@ The most likely critical path is in stage 2. For example, the one going through 
 
 #### 10. Where do the UART modules, instruction, and cycle counters go? How are you going to drive uart_tx_data_in_valid and uart_rx_data_out_ready (give logic expressions)?
 The UART modules, instruction counter, and cycle counter go in the memory stage in parallel with the BIOS memory, IMEM, and DMEM. Extra logic (muxes + control signals) can be used to determine whether these devices are being accessed based on the memory map. \
-uart_tx_data_in_valid = address == 32'h80000008; // Only want to have a transaction between our UART TX and an external UART RX if we are trying to transmit data using the TX \
-uart_rx_data_out_ready = address == 32'h80000004; // Only want to have a transaction between our UART RX and an external UART TX if we are trying to receive data using the RX
+uart_tx_data_in_valid = address == 32'h80000008 && inst == STORE; // Only want to have a transaction between our UART TX and an external UART RX if we are trying to transmit data using the TX \
+uart_rx_data_out_ready = address == 32'h80000004 && inst == LOAD; // Only want to have a transaction between our UART RX and an external UART TX if we are trying to receive data using the RX
 
 #### 11. What is the role of the CSR register? Where does it go?
 The CSR register is used by CSR instructions. It goes in the memory stage in parallel with the memories + memory mapped I/O devices.
