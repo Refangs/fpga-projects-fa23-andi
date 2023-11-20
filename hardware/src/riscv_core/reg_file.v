@@ -9,4 +9,15 @@ module reg_file (
     reg [31:0] mem [0:31];
     assign rd1 = 32'd0;
     assign rd2 = 32'd0;
+    // TODO: IMPLEMENT ALL REGISTERS
+
+    // asynchronous read
+    assign rd1 = mem[ra1];
+    assign rd2 = mem[ra2];
+
+    always @(posedge clk) begin
+        if (we && wa != 5'b0) begin
+            mem[wa] <= wd;
+        end
+    end
 endmodule
