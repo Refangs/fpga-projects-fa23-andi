@@ -16,7 +16,7 @@ module branch_comp (
     always @(*) begin
         if (!brun) begin
             if (rs1_sign && rs2_sign) begin
-                brlt = rs1 > rs2;
+                brlt = rs1 < rs2;
             end else if (rs1_sign && !rs2_sign) begin
                 brlt = 1'b1;
             end else if (!rs1_sign && rs2_sign) begin

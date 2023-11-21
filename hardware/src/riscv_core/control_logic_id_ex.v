@@ -1,3 +1,6 @@
+`include "opcode.vh"
+`include "control_signals.vh"
+
 module control_logic_id_ex (
     input [31:0] inst_id,
     input [31:0] inst_mem,

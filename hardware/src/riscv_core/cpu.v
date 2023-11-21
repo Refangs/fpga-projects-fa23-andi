@@ -115,6 +115,8 @@ module cpu #(
     reg [31:0] inst_mem;
     reg pc_sel_mem;
 
+    reg pc_sel_mem_old; // new
+
     wire [31:0] mem_data_out;
     wire [31:0] data_resource_out;
     
@@ -125,7 +127,16 @@ module cpu #(
       if (rst) begin
         pc <= RESET_PC;
       end else begin
-        pc <= pc_sel_ex ? alu_out : pc + 4;
+        pc <= pc_sel_mem ? alu_mem : pc + 4;
+      end
+    end
+
+    /* Extra PCSel register to flush the third instruction for jumps and taken branches. */
+    always @(posedge clk) begin
+      if (rst) begin
+        pc_sel_mem_old <= 0;
+      end else begin
+        pc_sel_mem_old <= pc_sel_mem;
       end
     end
 
@@ -157,7 +168,7 @@ module cpu #(
     wire [31:0] mem_inst_out;
     // wire [31:0] inst;
     assign mem_inst_out = pc_id[30] ? bios_douta : imem_doutb;
-    assign inst = pc_sel_mem ? 32'h00000013 : mem_inst_out;
+    assign inst = (pc_sel_ex || pc_sel_mem || pc_sel_mem_old) ? 32'h00000013 : mem_inst_out;
 
     wire [31:0] imm;
     imm_gen imm_gen (
@@ -284,7 +295,7 @@ module cpu #(
       end else begin
         pc_mem <= pc_ex;
         alu_mem <= alu_out;
-        inst_mem <= pc_sel_mem ? 32'h00000013 : inst_ex;
+        inst_mem <= inst_ex;
         pc_sel_mem <= pc_sel_ex;
       end
     end
@@ -293,16 +304,18 @@ module cpu #(
     reg [31:0] tohost_csr;
     always @(posedge clk) begin
       if (rst) begin
-        tohost_csr <= 1;
+        tohost_csr <= 0;
       end else begin
         if (inst_ex[6:0] == `OPC_CSR) begin
           if (inst_ex[14:12] == 3'b001) begin
             // csrrw
-            tohost_csr <= rs1_ex;
+            tohost_csr <= rs1_ex_fwd;
           end else begin
             // csrrwi
             tohost_csr <= imm_ex;
           end
+        end else begin
+          tohost_csr <= 0;
         end
       end
     end
@@ -335,6 +348,7 @@ module cpu #(
       .mem_dout(mem_data_out)
     );
 
+
     //wire [31:0] data_resource_out;
     assign data_resource_out = mem_data_out; // add IO logic later (UART, cycle count, inst count)
 
@@ -345,5 +359,7 @@ module cpu #(
     // Fix later. Add to control logic?
     assign dmem_en = 1;
     assign imem_ena = 1;
+    assign bios_ena = 1;
+    assign bios_enb = 1;
     
 endmodule

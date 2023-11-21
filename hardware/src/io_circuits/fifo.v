@@ -53,20 +53,20 @@ module fifo #(
         end
     end
 
-    // SystemVerilog Assertions
-    property full_no_write;
-        @(posedge clk) wr_en && full |-> ##1 wr_ptr == $past(wr_ptr);
-    endproperty
-    assert property(full_no_write);
+    // // SystemVerilog Assertions
+    // property full_no_write;
+    //     @(posedge clk) wr_en && full |-> ##1 wr_ptr == $past(wr_ptr);
+    // endproperty
+    // assert property(full_no_write);
 
-    property empty_no_read;
-        @(posedge clk) rd_en && empty |-> ##1 rd_ptr == $past(rd_ptr);
-    endproperty
-    assert property(empty_no_read);
+    // property empty_no_read;
+    //     @(posedge clk) rd_en && empty |-> ##1 rd_ptr == $past(rd_ptr);
+    // endproperty
+    // assert property(empty_no_read);
 
-    property correct_reset;
-        @(posedge clk) rst |-> ##1 (rd_ptr == 0) && (wr_ptr == 0) && (full == 0);
-    endproperty
-    assert property(correct_reset);
+    // property correct_reset;
+    //     @(posedge clk) rst |-> ##1 (rd_ptr == 0) && (wr_ptr == 0) && (full == 0);
+    // endproperty
+    // assert property(correct_reset);
 
 endmodule

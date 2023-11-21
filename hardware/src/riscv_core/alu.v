@@ -22,12 +22,9 @@ module alu (
         `ALU_SLL:
             alu_out = in_a << in_b[4:0];
         `ALU_SLT:
-            alu_out = in_a < in_b ? 32'b0 : 32'b1; // is this signed?
-        `ALU_SLTU:
         begin
-            // Is this correct ?? I think slt and sltu should be switched ??? since normal < just compares bits (unsigned)
             if (a_sign && b_sign) begin
-                alu_out = in_a > in_b;
+                alu_out = in_a < in_b;
             end else if (a_sign && !b_sign) begin
                 alu_out = 32'b1;
             end else if (!a_sign && b_sign) begin
@@ -36,6 +33,8 @@ module alu (
                 alu_out = in_a < in_b;
             end
         end
+        `ALU_SLTU:
+            alu_out = in_a < in_b ? 32'b1 : 32'b0;
         `ALU_XOR:
             alu_out = in_a ^ in_b;
         `ALU_SRL:
