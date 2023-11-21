@@ -7,8 +7,6 @@ module reg_file (
 );
     parameter DEPTH = 32;
     reg [31:0] mem [0:31];
-    assign rd1 = 32'd0;
-    assign rd2 = 32'd0;
     // TODO: IMPLEMENT ALL REGISTERS
 
     // asynchronous read

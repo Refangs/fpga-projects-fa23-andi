@@ -12,47 +12,45 @@ module imm_gen (
     always @(*) begin
         imm = 32'b0;
         case (opcode)
-        OPC_ARI_RTYPE:
-        begin
-            // do R type
-            // don't care
-            imm = 32'b0;
-        end
-        OPC_ARI_ITYPE, OPC_LOAD, OPC_JALR:
+        `OPC_ARI_ITYPE, `OPC_LOAD, `OPC_JALR:
         begin
             // do I type (and I* type)
             if (funct3 == 3'b101) begin
                 // I* type
-                imm = {27{1'b0}, inst[24:20]};
+                imm = {27'b0, inst[24:20]};
             end else begin
                 // I type
-                imm = {20{inst[31]}, inst[31:20]};
+                imm = {{20{inst[31]}}, inst[31:20]};
             end
         end
-        OPC_STORE:
+        `OPC_STORE:
         begin
             // S Type
-            imm = {20{inst[31]}, inst[31:25], inst[11:7]};
+            imm = {{20{inst[31]}}, inst[31:25], inst[11:7]};
         end
-        OPC_BRANCH:
+        `OPC_BRANCH:
         begin
             // B type
-            imm = {19{inst[31]}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0};
+            imm = {{19{inst[31]}}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0};
         end
-        OPC_LUI, OPC_AUIPC:
+        `OPC_LUI, `OPC_AUIPC:
         begin
             // U type
-            imm = {inst[31:12], 8{1'b0}};
+            imm = {inst[31:12], 12'b0};
         end
-        OPC_JAL:
+        `OPC_JAL:
         begin
             // J type
-            imm = {12{inst[31]}, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0};
+            imm = {{11{inst[31]}}, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0};
         end
-        OPC_CSR:
+        `OPC_CSR:
         begin
             // CSR type
-            imm = {27{1'b0}, inst[19:15]};
+            imm = {27'b0, inst[19:15]};
+        end
+        default:
+        begin
+            imm = 32'b0;
         end
         endcase
     end

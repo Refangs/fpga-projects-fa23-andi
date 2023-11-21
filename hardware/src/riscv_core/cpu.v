@@ -1,4 +1,5 @@
 `include "opcode.vh"
+`include "control_signals.vh"
 
 module cpu #(
     parameter CPU_CLOCK_FREQ = 50_000_000,
@@ -107,6 +108,16 @@ module cpu #(
     // Add as many modules as you want
     // Feel free to move the memory modules around
 
+    wire [31:0] alu_out;
+    wire pc_sel_ex;
+    
+    reg [31:0] alu_mem;
+    reg [31:0] inst_mem;
+    reg pc_sel_mem;
+
+    wire [31:0] mem_data_out;
+    
+
     /* Instruction Fetch/PC "Stage". */
     reg [31:0] pc;
     always @(posedge clk) begin
@@ -174,7 +185,7 @@ module cpu #(
     wire [1:0] b_sel;
     wire [3:0] alu_sel;
     wire [1:0] fwd_sel;
-    wire pc_sel_ex;
+    //wire pc_sel_ex;
     control_logic_ex_mem cl_ex_mem(
       .inst_ex(inst_ex),
       .inst_mem(inst_mem),
@@ -191,10 +202,11 @@ module cpu #(
     /* EX stage. */
     wire [31:0] alu_in_a;
     wire [31:0] alu_in_b;
+    // fix pc addition in ALU? since top 4 bits are metadata. Maybe a problem
     assign alu_in_a = a_sel == 0 ? rs1_ex : (a_sel == 1 ? pc_ex : (a_sel == 2 ? alu_mem : mem_data_out));
-    assign alu_in_b = b_sel == 0 ? rs2_ex : (a_sel == 1 ? imm_ex : (a_sel == 2 ? alu_mem : mem_data_out));
+    assign alu_in_b = b_sel == 0 ? rs2_ex : (b_sel == 1 ? imm_ex : (b_sel == 2 ? alu_mem : mem_data_out));
 
-    wire [31:0] alu_out;
+    //wire [31:0] alu_out;
     alu alu (
       .in_a(alu_in_a),
       .in_b(alu_in_b),
@@ -215,13 +227,13 @@ module cpu #(
       .data_out(mem_data_in)
     );
 
-    assign bios_addrb = alu_out;
+    assign bios_addrb = alu_out[13:2];
 
-    assign imem_addra = alu_out;
+    assign imem_addra = alu_out[15:2];
     assign imem_dina = mem_data_in;
     assign imem_wea = mem_wmask;
 
-    assign dmem_addr = alu_out;
+    assign dmem_addr = alu_out[15:2];
     assign dmem_din = mem_data_in;
     assign dmem_we = mem_wmask;
 
@@ -236,9 +248,9 @@ module cpu #(
 
     /* MEM stage pipeline registers. */
     reg [31:0] pc_mem;
-    reg [31:0] alu_mem;
-    reg [31:0] inst_mem;
-    reg pc_sel_mem;
+    //reg [31:0] alu_mem;
+    //reg [31:0] inst_mem;
+    //reg pc_sel_mem;
     always @(posedge clk) begin
       if (rst) begin
         pc_mem <= RESET_PC;
@@ -259,7 +271,7 @@ module cpu #(
       if (rst) begin
         tohost_csr <= 1;
       end else begin
-        if (inst_ex[6:0] == OPC_CSR) begin
+        if (inst_ex[6:0] == `OPC_CSR) begin
           if (inst_ex[14:12] == 3'b001) begin
             // csrrw
             tohost_csr <= rs1_ex;
@@ -291,7 +303,7 @@ module cpu #(
     wire [31:0] mem_data_out_raw;
     assign mem_data_out_raw = alu_mem[30] ? bios_doutb : dmem_dout;
 
-    wire [31:0] mem_data_out;
+    //wire [31:0] mem_data_out;
     partial_load partial_load (
       .mem_dout_raw(mem_data_out_raw),
       .ld_mask(ld_mask),
@@ -306,4 +318,8 @@ module cpu #(
     assign wa = inst_mem[11:7];
     assign we = reg_wen;
 
+    // Fix later. Add to control logic?
+    assign dmem_en = 1;
+    assign imem_ena = 1;
+    
 endmodule

@@ -18,26 +18,26 @@ module partial_store (
     always @(*) begin
         wmask = 4'b0;
         data_out = 32'b0;
-        if (opcode != OPC_STORE) begin
+        if (opcode != `OPC_STORE) begin
             wmask = 4'b0;
             data_out = 32'b0;
         end else begin
             // can probably simplify this code (take out assignment to data_out and maybe shifting wmask by offset?)
             case (funct3)
-            FNC_SW:
+            `FNC_SW:
             begin
                 wmask = 4'b1111;
                 data_out = data_in;
             end
-            FNC_SH:
+            `FNC_SH:
             begin
                 wmask = 4'b0011 << offset;
-                data_out = data_in << offset;
+                data_out = data_in << offset * 8;
             end
-            FNC_SB:
+            `FNC_SB:
             begin
                 wmask = 4'b0001 << offset;
-                data_out = data_in << offset;
+                data_out = data_in << offset * 8;
             end
             endcase
         end
