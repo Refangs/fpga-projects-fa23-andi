@@ -116,6 +116,7 @@ module cpu #(
     reg pc_sel_mem;
 
     wire [31:0] mem_data_out;
+    wire [31:0] data_resource_out;
     
 
     /* Instruction Fetch/PC "Stage". */
@@ -142,9 +143,19 @@ module cpu #(
       end
     end
 
+    /* ID to EX stage control (forwarding) logic. */
+    wire [31:0] inst;
+    wire rd1_sel, rd2_sel;
+    control_logic_id_ex cl_id_ex(
+      .inst_id(inst),
+      .inst_mem(inst_mem),
+      .rd1_sel(rd1_sel),
+      .rd2_sel(rd2_sel)
+    );
+
     /* ID Stage. */
     wire [31:0] mem_inst_out;
-    wire [31:0] inst;
+    // wire [31:0] inst;
     assign mem_inst_out = pc_id[30] ? bios_douta : imem_doutb;
     assign inst = pc_sel_mem ? 32'h00000013 : mem_inst_out;
 
@@ -156,6 +167,11 @@ module cpu #(
     
     assign ra1 = inst[19:15];
     assign ra2 = inst[24:20];
+
+    wire [31:0] rd1_fwd;
+    wire [31:0] rd2_fwd;
+    assign rd1_fwd = rd1_sel ? wd : rd1;
+    assign rd2_fwd = rd2_sel ? wd : rd2;
 
     /* EX stage pipeline registers. */
     reg [31:0] pc_ex;
@@ -172,8 +188,8 @@ module cpu #(
         inst_ex <= 32'h00000013;
       end else begin
         pc_ex <= pc_id;
-        rs1_ex <= rd1;
-        rs2_ex <= rd2;
+        rs1_ex <= rd1_fwd;
+        rs2_ex <= rd2_fwd;
         imm_ex <= imm;
         inst_ex <= inst;
       end
@@ -181,8 +197,10 @@ module cpu #(
 
     /* EX to MEM stage control logic. */
     wire breq, brlt, brun;
-    wire [1:0] a_sel;
-    wire [1:0] b_sel;
+    wire [1:0] rs1_sel;
+    wire [1:0] rs2_sel;
+    wire a_sel;
+    wire b_sel;
     wire [3:0] alu_sel;
     wire [1:0] fwd_sel;
     //wire pc_sel_ex;
@@ -192,6 +210,8 @@ module cpu #(
       .breq(breq),
       .brlt(brlt),
       .brun(brun),
+      .rs1_sel(rs1_sel),
+      .rs2_sel(rs2_sel),
       .a_sel(a_sel),
       .b_sel(b_sel),
       .alu_sel(alu_sel),
@@ -200,11 +220,16 @@ module cpu #(
     );
 
     /* EX stage. */
+    wire [31:0] rs1_ex_fwd;
+    wire [31:0] rs2_ex_fwd;
+    assign rs1_ex_fwd = rs1_sel == 0 ? rs1_ex : (rs1_sel == 1 ? alu_mem : data_resource_out);
+    assign rs2_ex_fwd = rs2_sel == 0 ? rs2_ex : (rs2_sel == 1 ? alu_mem : data_resource_out);
+
     wire [31:0] alu_in_a;
     wire [31:0] alu_in_b;
     // fix pc addition in ALU? since top 4 bits are metadata. Maybe a problem
-    assign alu_in_a = a_sel == 0 ? rs1_ex : (a_sel == 1 ? pc_ex : (a_sel == 2 ? alu_mem : mem_data_out));
-    assign alu_in_b = b_sel == 0 ? rs2_ex : (b_sel == 1 ? imm_ex : (b_sel == 2 ? alu_mem : mem_data_out));
+    assign alu_in_a = a_sel == 0 ? rs1_ex_fwd : pc_ex;
+    assign alu_in_b = b_sel == 0 ? rs2_ex_fwd : imm_ex;
 
     //wire [31:0] alu_out;
     alu alu (
@@ -215,7 +240,7 @@ module cpu #(
     );
 
     wire [31:0] mem_data_in_raw;
-    assign mem_data_in_raw = fwd_sel == 0 ? rs2_ex : (fwd_sel == 1 ? alu_mem : mem_data_out);
+    assign mem_data_in_raw = rs2_ex_fwd;
 
     wire [3:0] mem_wmask;
     wire [31:0] mem_data_in;
@@ -237,10 +262,9 @@ module cpu #(
     assign dmem_din = mem_data_in;
     assign dmem_we = mem_wmask;
 
-    // TODO: IMPLEMENT FORWARDING LOGIC TO BRANCH COMP LATER (??)
     branch_comp branch_comp (
-      .rs1(rs1_ex),
-      .rs2(rs2_ex),
+      .rs1(rs1_ex_fwd),
+      .rs2(rs2_ex_fwd),
       .brun(brun),
       .breq(breq),
       .brlt(brlt)
@@ -311,7 +335,7 @@ module cpu #(
       .mem_dout(mem_data_out)
     );
 
-    wire [31:0] data_resource_out;
+    //wire [31:0] data_resource_out;
     assign data_resource_out = mem_data_out; // add IO logic later (UART, cycle count, inst count)
 
     assign wd = wb_sel == 0 ? alu_mem : (wb_sel == 1 ? data_resource_out : pc_mem + 4);

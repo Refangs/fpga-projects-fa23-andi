@@ -47,39 +47,13 @@ module control_logic_ex_mem (
     // All instructions write to rd except for store, branch, and csrrwi (csrrw does but we can ignore since rd is always x0)
     assign has_rd_mem = !(opcode_mem == `OPC_STORE || opcode_mem == `OPC_BRANCH || opcode_mem == `OPC_CSR);
 
+    // maybe don't even need uses_rs1_ex?? can always forward if rd_mem == rsx_ex (and rsx_ex is not x0). It will be filtered out by a_sel/b_sel if an instruction doesn't use it anyways
+
     // All instructions use rs1 (either in ALU or BC) except lui, auipc, jal, and csrrwi (can ignore csrrwi since it doesn't use alu. connect to csr reg later)
     assign uses_rs1_ex = !(opcode_ex == `OPC_LUI || opcode_ex == `OPC_AUIPC || opcode_ex == `OPC_JAL);
 
     // The only instructions that use rs2 are R-Types, store, and branch.
     assign uses_rs2_ex = opcode_ex == `OPC_ARI_RTYPE || opcode_ex == `OPC_STORE || opcode_ex == `OPC_BRANCH;
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // NOTE: Need another forwarding path between mem/alu and branch comp? if we keep it in EX stage.
-    // We can also guarantee correct branch prediction by moving branch comp to ID stage
-    // ASel + BSel
-
-    // TODO!!!!!!!!!: Define localparams for what each selector means? maybe want global params actually.
-    // DEFINITELY ADD PARAMS for ALU (there are too many vals and don't want this to not work if alu operations are rearranged)
-    wire has_rd_mem;
-    wire uses_rs1_ex;
-    wire uses_rs2_ex;
-    // All instructions write to rd except for store, branch, and csrrwi (csrrw does but we can ignore since it's always rd)
-    assign has_rd_mem = !(opcode_mem == `OPC_STORE || opcode_mem == `OPC_BRANCH || opcode_mem == `OPC_CSR);
-    // All instructions use rs1 in the ALU except for jal, lui, auipc, and branch (branch uses in branch comp)
-    assign uses_rs1_ex = !(opcode_ex == `OPC_JAL || opcode_ex == `OPC_LUI || opcode_ex == `OPC_AUIPC || opcode_ex == `OPC_BRANCH);
-    // The only instructions that use rs2 in the ALU are R-type instructions (store rs2 goes to dmem input. branch rs2 goes to branch comp.)
-    assign uses_rs2_ex = opcode_ex == `OPC_ARI_RTYPE;
 
     /*
     0: rs1_ex or rs2_ex
@@ -87,9 +61,49 @@ module control_logic_ex_mem (
     2: mem
     */
 
+    // rs1
     always @(*) begin
-        
+        rs1_sel = 2'd0;
+        if (has_rd_mem && uses_rs1_ex && rd_mem == rs1_ex && rs1_ex != 5'b0) begin
+            if (opcode_mem == `OPC_LOAD) begin
+                rs1_sel = 2'd2;
+            end else begin
+                rs1_sel = 2'd1;
+            end
+        end else begin
+            rs1_sel = 2'd0;
+        end
     end
+
+    // rs2
+    always @(*) begin
+        rs2_sel = 2'd0;
+        if (has_rd_mem && uses_rs2_ex && rd_mem == rs2_ex && rs2_ex != 5'b0) begin
+            if (opcode_mem == `OPC_LOAD) begin
+                rs2_sel = 2'd2;
+            end else begin
+                rs2_sel = 2'd1;
+            end
+        end else begin
+            rs2_sel = 2'd0;
+        end
+    end
+
+    // // NOTE: Need another forwarding path between mem/alu and branch comp? if we keep it in EX stage.
+    // // We can also guarantee correct branch prediction by moving branch comp to ID stage
+    // // ASel + BSel
+
+    // // TODO!!!!!!!!!: Define localparams for what each selector means? maybe want global params actually.
+    // // DEFINITELY ADD PARAMS for ALU (there are too many vals and don't want this to not work if alu operations are rearranged)
+    // wire has_rd_mem;
+    // wire uses_rs1_ex;
+    // wire uses_rs2_ex;
+    // // All instructions write to rd except for store, branch, and csrrwi (csrrw does but we can ignore since it's always rd)
+    // assign has_rd_mem = !(opcode_mem == `OPC_STORE || opcode_mem == `OPC_BRANCH || opcode_mem == `OPC_CSR);
+    // // All instructions use rs1 in the ALU except for jal, lui, auipc, and branch (branch uses in branch comp)
+    // assign uses_rs1_ex = !(opcode_ex == `OPC_JAL || opcode_ex == `OPC_LUI || opcode_ex == `OPC_AUIPC || opcode_ex == `OPC_BRANCH);
+    // // The only instructions that use rs2 in the ALU are R-type instructions (store rs2 goes to dmem input. branch rs2 goes to branch comp.)
+    // assign uses_rs2_ex = opcode_ex == `OPC_ARI_RTYPE;
 
 
 
