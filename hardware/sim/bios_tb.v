@@ -214,7 +214,7 @@ module bios_tb();
         host_to_fpga(8'h61); // 'a'
         host_to_fpga(8'h61); // 'a'
         host_to_fpga(8'h61); // 'a'
-        host_to_fpga(8'h61); // 'a'
+        host_to_fpga(8'h61); // 'a'      
         host_to_fpga(8'h20); // [space]
         host_to_fpga(8'h33); // '3'
         host_to_fpga(8'h30); // '0'

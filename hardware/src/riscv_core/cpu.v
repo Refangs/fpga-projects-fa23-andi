@@ -281,6 +281,10 @@ module cpu #(
       .brlt(brlt)
     );
 
+    assign uart_rx_data_out_ready = inst_ex[6:0] == `OPC_LOAD && alu_out == 32'h80000004;
+    assign uart_tx_data_in_valid = inst_ex[6:0] == `OPC_STORE && alu_out == 32'h80000008;
+    assign uart_tx_data_in = rs2_ex_fwd;
+
     /* MEM stage pipeline registers. */
     reg [31:0] pc_mem;
     //reg [31:0] alu_mem;
@@ -315,7 +319,37 @@ module cpu #(
             tohost_csr <= imm_ex;
           end
         end else begin
-          tohost_csr <= 0;
+          tohost_csr <= tohost_csr;
+        end
+      end
+    end
+    
+
+    /* Cycle Counter. */
+    reg [31:0] cycle_cnt;
+    always @(posedge clk) begin
+      if (rst) begin
+        cycle_cnt <= 0;
+      end else begin
+        if (inst_ex[6:0] == `OPC_STORE && alu_out == 32'h80000018) begin
+          cycle_cnt <= 0;
+        end else begin
+          cycle_cnt <= cycle_cnt + 1;
+        end
+      end
+    end
+
+    /* Instruction Counter. */
+    reg [31:0] inst_cnt;
+    always @(posedge clk) begin
+      if (rst) begin
+        inst_cnt <= 0;
+      end else begin
+        if (cycle_cnt > 3 && inst_mem != 32'h00000013) begin
+          // maybe don't hardcode later. Make pipeline registers to keep track of whether an instruction is valid
+          inst_cnt <= inst_cnt + 1;
+        end else begin
+          inst_cnt <= inst_cnt;
         end
       end
     end
@@ -323,7 +357,7 @@ module cpu #(
     /* MEM to PC stage control logic. */
     wire [3:0] ld_mask;
     wire ld_sign;
-    wire [1:0] io_sel;
+    wire [2:0] io_sel;
     wire [1:0] wb_sel;
     wire reg_wen;
     control_logic_mem_pc cl_mem_pc (
@@ -348,13 +382,19 @@ module cpu #(
       .mem_dout(mem_data_out)
     );
 
+    wire [31:0] uart_control_out_32;
+    wire [31:0] uart_rx_data_out_32;
+    assign uart_control_out_32 = {30'b0, uart_rx_data_out_valid, uart_tx_data_in_ready};
+    assign uart_rx_data_out_32 = {24'b0, uart_rx_data_out};
 
     //wire [31:0] data_resource_out;
-    assign data_resource_out = mem_data_out; // add IO logic later (UART, cycle count, inst count)
+    //assign data_resource_out = io_sel == 0 ? mem_data_out : (io_sel == 1 ? uart_control_out_32 : (io_sel == 2 ? uart_rx_data_out_32 : (io_sel == 3 ? cycle_cnt : io_sel == 4 ? inst_cnt : 0))); // add IO logic later (UART, cycle count, inst count)
+    assign data_resource_out = io_sel == 0 ? mem_data_out : (io_sel == 1 ? uart_control_out_32 : (io_sel == 2 ? uart_rx_data_out_32 : (io_sel == 3 ? cycle_cnt : (io_sel == 4 ? inst_cnt : 0))));
 
     assign wd = wb_sel == 0 ? alu_mem : (wb_sel == 1 ? data_resource_out : pc_mem + 4);
     assign wa = inst_mem[11:7];
     assign we = reg_wen;
+
 
     // Fix later. Add to control logic?
     assign dmem_en = 1;

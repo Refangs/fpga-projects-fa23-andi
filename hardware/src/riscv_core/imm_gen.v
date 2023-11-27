@@ -14,14 +14,15 @@ module imm_gen (
         case (opcode)
         `OPC_ARI_ITYPE, `OPC_LOAD, `OPC_JALR:
         begin
-            // do I type (and I* type)
-            if (funct3 == 3'b101) begin
-                // I* type
-                imm = {27'b0, inst[24:20]};
-            end else begin
-                // I type
-                imm = {{20{inst[31]}}, inst[31:20]};
-            end
+            // // do I type (and I* type)
+            // if (funct3 == 3'b101) begin
+            //     // I* type
+            //     imm = {27'b0, inst[24:20]};
+            // end else begin
+            //     // I type
+            //     imm = {{20{inst[31]}}, inst[31:20]};
+            // end
+            imm = {{20{inst[31]}}, inst[31:20]};
         end
         `OPC_STORE:
         begin

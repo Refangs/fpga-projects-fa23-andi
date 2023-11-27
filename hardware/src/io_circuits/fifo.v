@@ -40,15 +40,15 @@ module fifo #(
             rd_ptr <= 0;
             wr_ptr <= 0;
         end else begin
-            if (rd_en && num_items > 0) begin
-                dout_reg = buffer[rd_ptr];
-                rd_ptr = rd_ptr + 1;
-                num_items = num_items - 1;
-            end
             if (wr_en && num_items < DEPTH) begin
                 buffer[wr_ptr] = din;
                 wr_ptr = wr_ptr + 1;
                 num_items = num_items + 1;
+            end
+            if (rd_en && num_items > 0) begin
+                dout_reg = buffer[rd_ptr];
+                rd_ptr = rd_ptr + 1;
+                num_items = num_items - 1;
             end
         end
     end
