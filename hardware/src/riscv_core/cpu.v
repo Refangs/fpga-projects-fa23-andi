@@ -108,6 +108,14 @@ module cpu #(
     // Add as many modules as you want
     // Feel free to move the memory modules around
 
+    wire is_jump_branch_id;
+    wire [31:0] jump_addr; 
+
+    wire [31:0] inst;
+
+    reg [31:0] pc_ex;
+    reg [31:0] inst_ex;
+
     wire [31:0] alu_out;
     wire pc_sel_ex;
     
@@ -127,7 +135,11 @@ module cpu #(
       if (rst) begin
         pc <= RESET_PC;
       end else begin
-        pc <= pc_sel_mem ? alu_mem : pc + 4;
+        // pc <= pc_sel_mem ? alu_mem : pc + 4;
+        // pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
+        // Predict branch taken, flush if not taken
+        // pc <= (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? (inst_ex[6:0] == `OPC_JALR ? alu_out + 4 : pc_ex + 8) : (is_jump_branch_id ? jump_addr + 4 : pc + 4);
+        pc <= inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? pc_ex + 8: (is_jump_branch_id ? jump_addr + 4 : pc + 4);
       end
     end
 
@@ -140,8 +152,17 @@ module cpu #(
       end
     end
 
-    assign bios_addra = pc[13:2];
-    assign imem_addrb = pc[15:2];
+    // wire is_jump_branch_id;
+    assign is_jump_branch_id = pc == RESET_PC ? 0 : inst[6:0] == `OPC_JAL || inst[6:0] == `OPC_JALR || inst[6:0] == `OPC_BRANCH;
+    wire [31:0] imem_addr_in;
+    // assign imem_addr_in = (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? (inst_ex[6:0] == `OPC_JALR ? alu_out : pc_ex + 4) : (is_jump_branch_id ? jump_addr : pc);
+    assign imem_addr_in = inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? pc_ex + 4 : (is_jump_branch_id ? jump_addr : pc);
+
+    // assign bios_addra = pc[13:2];
+    // assign imem_addrb = pc[15:2];
+
+    assign bios_addra = imem_addr_in[13:2];
+    assign imem_addrb = imem_addr_in[15:2];
 
 
     /* ID stage pipeline registers. */
@@ -150,12 +171,16 @@ module cpu #(
       if (rst) begin
         pc_id <= RESET_PC;
       end else begin
-        pc_id <= pc;
+        // pc_id <= pc;
+        // pc_id <= is_jump_branch_id ? jump_addr : pc;
+
+        // pc_id <= (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? (inst_ex[6:0] == `OPC_JALR ? alu_out : pc_ex + 4) : (is_jump_branch_id ? jump_addr : pc);
+        pc_id <= inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? pc_ex + 4 : (is_jump_branch_id ? jump_addr : pc);
       end
     end
 
     /* ID to EX stage control (forwarding) logic. */
-    wire [31:0] inst;
+    // wire [31:0] inst;
     wire rd1_sel, rd2_sel;
     control_logic_id_ex cl_id_ex(
       .inst_id(inst),
@@ -168,7 +193,10 @@ module cpu #(
     wire [31:0] mem_inst_out;
     // wire [31:0] inst;
     assign mem_inst_out = pc_id[30] ? bios_douta : imem_doutb;
-    assign inst = (pc_sel_ex || pc_sel_mem || pc_sel_mem_old) ? 32'h00000013 : mem_inst_out;
+    // assign inst = (pc_sel_ex || pc_sel_mem || pc_sel_mem_old) ? 32'h00000013 : mem_inst_out;
+    // assign inst = (pc_sel_ex || pc_sel_mem) ? 32'h00000013 : mem_inst_out; // Predict branch not taken, flush if taken
+    // assign inst = (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? 32'h00000013 : mem_inst_out; // Predict branch taken, flush if not taken
+    assign inst = inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? 32'h00000013 : mem_inst_out; // Predict branch taken, flush if not taken
 
     wire [31:0] imm;
     imm_gen imm_gen (
@@ -184,12 +212,16 @@ module cpu #(
     assign rd1_fwd = rd1_sel ? wd : rd1;
     assign rd2_fwd = rd2_sel ? wd : rd2;
 
+    // wire [31:0] jump_addr; 
+    assign jump_addr = inst[6:0] == `OPC_JALR ? rd1_fwd + imm : pc_id + imm;
+    // assign jump_addr = pc_id + imm;
+
     /* EX stage pipeline registers. */
-    reg [31:0] pc_ex;
+    // reg [31:0] pc_ex;
     reg [31:0] rs1_ex;
     reg [31:0] rs2_ex;
     reg [31:0] imm_ex;
-    reg [31:0] inst_ex;
+    // reg [31:0] inst_ex;
     always @(posedge clk) begin
       if (rst) begin
         pc_ex <= RESET_PC;
@@ -213,7 +245,7 @@ module cpu #(
     wire a_sel;
     wire b_sel;
     wire [3:0] alu_sel;
-    wire [1:0] fwd_sel;
+    // wire [1:0] fwd_sel;
     //wire pc_sel_ex;
     control_logic_ex_mem cl_ex_mem(
       .inst_ex(inst_ex),
@@ -226,7 +258,7 @@ module cpu #(
       .a_sel(a_sel),
       .b_sel(b_sel),
       .alu_sel(alu_sel),
-      .fwd_sel(fwd_sel),
+      // .fwd_sel(fwd_sel),
       .pc_sel_ex(pc_sel_ex)
     );
 
@@ -267,11 +299,14 @@ module cpu #(
 
     assign imem_addra = alu_out[15:2];
     assign imem_dina = mem_data_in;
-    assign imem_wea = mem_wmask;
+    // assign imem_wea = (alu_out[31:29] == 3'b001 && pc_ex[30] == 1) ? mem_wmask : 4'b0000;
+    assign imem_wea = (inst_ex[6:0] == `OPC_STORE && alu_out[31:29] == 3'b001 && pc_ex[30] == 1) ? mem_wmask : 4'b0;
 
     assign dmem_addr = alu_out[15:2];
     assign dmem_din = mem_data_in;
-    assign dmem_we = mem_wmask;
+    // assign dmem_we = (alu_out[31:30] == 2'b00 && alu_out[28] == 1) ? mem_wmask : 4'b0000;
+    assign dmem_we = (inst_ex[6:0] == `OPC_STORE && alu_out[31:30] == 2'b00 && alu_out[28] == 1) ?  mem_wmask : 4'b0;
+
 
     branch_comp branch_comp (
       .rs1(rs1_ex_fwd),
@@ -283,7 +318,7 @@ module cpu #(
 
     assign uart_rx_data_out_ready = inst_ex[6:0] == `OPC_LOAD && alu_out == 32'h80000004;
     assign uart_tx_data_in_valid = inst_ex[6:0] == `OPC_STORE && alu_out == 32'h80000008;
-    assign uart_tx_data_in = rs2_ex_fwd;
+    assign uart_tx_data_in = rs2_ex_fwd[7:0];
 
     /* MEM stage pipeline registers. */
     reg [31:0] pc_mem;
@@ -345,12 +380,21 @@ module cpu #(
       if (rst) begin
         inst_cnt <= 0;
       end else begin
-        if (cycle_cnt > 3 && inst_mem != 32'h00000013) begin
-          // maybe don't hardcode later. Make pipeline registers to keep track of whether an instruction is valid
-          inst_cnt <= inst_cnt + 1;
+        if (inst_ex[6:0] == `OPC_STORE && alu_out == 32'h80000018) begin
+          inst_cnt <= 0;
         end else begin
-          inst_cnt <= inst_cnt;
+          if (inst_mem == 32'h00000013) begin
+            inst_cnt <= inst_cnt;
+          end else begin
+            inst_cnt <= inst_cnt + 1;
+          end
         end
+        // else if (cycle_cnt > 3 && inst_mem != 32'h00000013) begin
+        //   // maybe don't hardcode later. Make pipeline registers to keep track of whether an instruction is valid
+        //   inst_cnt <= inst_cnt + 1;
+        // end else begin
+        //   inst_cnt <= inst_cnt;
+        // end
       end
     end
 
@@ -397,9 +441,14 @@ module cpu #(
 
 
     // Fix later. Add to control logic?
-    assign dmem_en = 1;
-    assign imem_ena = 1;
-    assign bios_ena = 1;
-    assign bios_enb = 1;
+    // assign dmem_en = 1;
+    // assign imem_ena = 1;
+    // assign bios_ena = 1;
+    // assign bios_enb = 1;
+
+    assign dmem_en = (inst_ex[6:0] == `OPC_STORE || inst_ex[6:0] == `OPC_LOAD) && alu_out[31:30] == 2'b0 && alu_out[28] == 1'b1;
+    assign imem_ena = inst_ex[6:0] == `OPC_STORE && alu_out[31:29] == 3'b001 && pc_ex[30] == 1;
+    assign bios_ena = pc[30] == 1;
+    assign bios_enb = alu_out[30] == 1;
     
 endmodule

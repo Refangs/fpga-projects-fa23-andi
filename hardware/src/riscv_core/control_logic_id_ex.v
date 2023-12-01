@@ -21,7 +21,8 @@ module control_logic_id_ex (
     assign rd_mem = inst_mem[11:7];
 
     wire has_rd_mem;    // true if inst_mem writes to rd
-    assign has_rd_mem = !(opcode_mem == `OPC_STORE || opcode_mem == `OPC_BRANCH || opcode_mem == `OPC_CSR);
+    // assign has_rd_mem = !(opcode_mem == `OPC_STORE || opcode_mem == `OPC_BRANCH || opcode_mem == `OPC_CSR);
+    assign has_rd_mem = !(opcode_mem == `OPC_STORE || opcode_mem == `OPC_BRANCH);
 
     /*
     rdx_sel

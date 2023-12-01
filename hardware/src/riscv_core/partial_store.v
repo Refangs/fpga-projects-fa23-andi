@@ -16,8 +16,6 @@ module partial_store (
     assign offset = addr[1:0];
 
     always @(*) begin
-        wmask = 4'b0;
-        data_out = 32'b0;
         if (opcode != `OPC_STORE) begin
             wmask = 4'b0;
             data_out = 32'b0;
@@ -38,6 +36,11 @@ module partial_store (
             begin
                 wmask = 4'b0001 << offset;
                 data_out = data_in << offset * 8;
+            end
+            default:
+            begin
+                wmask = 4'b0;
+                data_out = 32'b0;
             end
             endcase
         end

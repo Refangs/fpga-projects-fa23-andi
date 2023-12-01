@@ -12,7 +12,7 @@ module control_logic_ex_mem (
     output reg a_sel,
     output reg b_sel,
     output reg [3:0] alu_sel,
-    output reg [1:0] fwd_sel,
+    // output reg [1:0] fwd_sel,
     output pc_sel_ex
 );
     
@@ -221,29 +221,29 @@ module control_logic_ex_mem (
     // TODO: fwd_sel
         // forward either mem or alu to input to data memories. (if not forwarding use rs2)
 
-    /*
-    0: rs2
-    1: alu from mem stage
-    2: mem (from mem stage)
-    */
-    always @(*) begin
-        fwd_sel = 2'd0;
-        if (opcode_ex == `OPC_STORE) begin
-            // if store instruction is in EX, might need to forward something from MEM to write to memory
-            if (has_rd_mem && rd_mem == rs2_ex) begin
-                // if mem writes to rd and it's the same register as rs2 (which is data that goes into data memories)
-                if (opcode_mem == `OPC_LOAD) begin
-                    // if inst writing to rd in MEM stage is a load, need to forward memory
-                    fwd_sel = 2'd2;
-                end else begin
-                    // other instructions that write to rd need to forward alu output (from mem)
-                    fwd_sel = 2'd1;
-                end
-            end else begin
-                fwd_sel = 2'd0;
-            end
-        end
-    end
+    // /*
+    // 0: rs2
+    // 1: alu from mem stage
+    // 2: mem (from mem stage)
+    // */
+    // always @(*) begin
+    //     fwd_sel = 2'd0;
+    //     if (opcode_ex == `OPC_STORE) begin
+    //         // if store instruction is in EX, might need to forward something from MEM to write to memory
+    //         if (has_rd_mem && rd_mem == rs2_ex) begin
+    //             // if mem writes to rd and it's the same register as rs2 (which is data that goes into data memories)
+    //             if (opcode_mem == `OPC_LOAD) begin
+    //                 // if inst writing to rd in MEM stage is a load, need to forward memory
+    //                 fwd_sel = 2'd2;
+    //             end else begin
+    //                 // other instructions that write to rd need to forward alu output (from mem)
+    //                 fwd_sel = 2'd1;
+    //             end
+    //         end else begin
+    //             fwd_sel = 2'd0;
+    //         end
+    //     end
+    // end
 
     // TODO: pc_sel_ex
         // if jal/jalr or taken branch
