@@ -108,7 +108,10 @@ module cpu #(
     // Add as many modules as you want
     // Feel free to move the memory modules around
 
+    reg [31:0] pc_id;
     wire [31:0] inst;
+
+    wire [31:0] imm;
 
     reg [31:0] pc_ex;
     reg [31:0] inst_ex;
@@ -134,9 +137,16 @@ module cpu #(
       if (rst) begin
         pc <= RESET_PC;
       end else begin
-        // pc <= pc_sel_mem ? alu_mem : pc + 4;
-        pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
-        // Predict branch taken, flush if not taken
+        // pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
+        if (inst[6:0] == `OPC_BRANCH || inst[6:0] == `OPC_JAL) begin
+          pc <= pc_id + imm + 4;
+        end else if (inst_ex[6:0] == `OPC_JALR) begin
+          pc <= alu_out;
+        end else if ((inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex)) begin
+          pc <= pc_ex + 4;
+        end else begin
+          pc <= pc + 4;
+        end
       end
     end
 
@@ -149,17 +159,21 @@ module cpu #(
       end
     end
 
-    assign bios_addra = pc[13:2];
-    assign imem_addrb = pc[15:2];
+    wire [31:0] predicted_pc;
+    assign predicted_pc = inst[6:0] == `OPC_BRANCH || inst[6:0] == `OPC_JAL ? pc_id + imm : pc;
+
+    assign bios_addra = predicted_pc[13:2];
+    assign imem_addrb = predicted_pc[15:2];
 
 
     /* ID stage pipeline registers. */
-    reg [31:0] pc_id;
+    // reg [31:0] pc_id;
     always @(posedge clk) begin
       if (rst) begin
         pc_id <= RESET_PC;
       end else begin
-        pc_id <= pc;
+        // pc_id <= pc;
+        pc_id <= predicted_pc;
       end
     end
 
@@ -177,9 +191,21 @@ module cpu #(
     wire [31:0] mem_inst_out;
     // wire [31:0] inst;
     assign mem_inst_out = pc_id[30] ? bios_douta : imem_doutb;
-    assign inst = pc_sel_ex || pc_sel_mem ? 32'h00000013 : mem_inst_out;
+    // assign inst = pc_sel_ex || pc_sel_mem ? 32'h00000013 : mem_inst_out;
 
-    wire [31:0] imm;
+    
+    wire [6:0] opcode_ex;
+    wire [6:0] opcode_mem;
+    assign opcode_ex = inst_ex[6:0];
+    assign opcode_mem = inst_mem[6:0];
+    wire flush;
+    // assign flush = (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || (inst_mem[6:0] == `OPC_BRANCH && !pc_sel_mem) || inst_ex[6:0] == `OPC_JALR || inst_mem[6:0] == `OPC_JALR || inst_ex[6:0] == `OPC_JAL || inst_mem[6:0] == `OPC_JAL;
+    // flush twice for branch mispredict + jalr, flush once for jal
+    assign flush = (opcode_ex == `OPC_BRANCH && !pc_sel_ex) || (opcode_mem == `OPC_BRANCH && !pc_sel_mem) || opcode_ex == `OPC_JALR || opcode_mem == `OPC_JALR;
+
+    assign inst = cycle_cnt == 0 || flush ? 32'h00000013 : mem_inst_out;
+
+    // wire [31:0] imm;
     imm_gen imm_gen (
       .inst(inst),
       .imm(imm)
