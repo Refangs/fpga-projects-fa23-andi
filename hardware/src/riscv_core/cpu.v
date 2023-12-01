@@ -108,9 +108,6 @@ module cpu #(
     // Add as many modules as you want
     // Feel free to move the memory modules around
 
-    wire is_jump_branch_id;
-    wire [31:0] jump_addr; 
-
     wire [31:0] inst;
 
     reg [31:0] pc_ex;
@@ -127,6 +124,8 @@ module cpu #(
 
     wire [31:0] mem_data_out;
     wire [31:0] data_resource_out;
+
+    reg [31:0] cycle_cnt;
     
 
     /* Instruction Fetch/PC "Stage". */
@@ -136,10 +135,8 @@ module cpu #(
         pc <= RESET_PC;
       end else begin
         // pc <= pc_sel_mem ? alu_mem : pc + 4;
-        // pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
+        pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
         // Predict branch taken, flush if not taken
-        // pc <= (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? (inst_ex[6:0] == `OPC_JALR ? alu_out + 4 : pc_ex + 8) : (is_jump_branch_id ? jump_addr + 4 : pc + 4);
-        pc <= inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? pc_ex + 8: (is_jump_branch_id ? jump_addr + 4 : pc + 4);
       end
     end
 
@@ -152,17 +149,8 @@ module cpu #(
       end
     end
 
-    // wire is_jump_branch_id;
-    assign is_jump_branch_id = pc == RESET_PC ? 0 : inst[6:0] == `OPC_JAL || inst[6:0] == `OPC_JALR || inst[6:0] == `OPC_BRANCH;
-    wire [31:0] imem_addr_in;
-    // assign imem_addr_in = (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? (inst_ex[6:0] == `OPC_JALR ? alu_out : pc_ex + 4) : (is_jump_branch_id ? jump_addr : pc);
-    assign imem_addr_in = inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? pc_ex + 4 : (is_jump_branch_id ? jump_addr : pc);
-
-    // assign bios_addra = pc[13:2];
-    // assign imem_addrb = pc[15:2];
-
-    assign bios_addra = imem_addr_in[13:2];
-    assign imem_addrb = imem_addr_in[15:2];
+    assign bios_addra = pc[13:2];
+    assign imem_addrb = pc[15:2];
 
 
     /* ID stage pipeline registers. */
@@ -171,11 +159,7 @@ module cpu #(
       if (rst) begin
         pc_id <= RESET_PC;
       end else begin
-        // pc_id <= pc;
-        // pc_id <= is_jump_branch_id ? jump_addr : pc;
-
-        // pc_id <= (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? (inst_ex[6:0] == `OPC_JALR ? alu_out : pc_ex + 4) : (is_jump_branch_id ? jump_addr : pc);
-        pc_id <= inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? pc_ex + 4 : (is_jump_branch_id ? jump_addr : pc);
+        pc_id <= pc;
       end
     end
 
@@ -193,10 +177,7 @@ module cpu #(
     wire [31:0] mem_inst_out;
     // wire [31:0] inst;
     assign mem_inst_out = pc_id[30] ? bios_douta : imem_doutb;
-    // assign inst = (pc_sel_ex || pc_sel_mem || pc_sel_mem_old) ? 32'h00000013 : mem_inst_out;
-    // assign inst = (pc_sel_ex || pc_sel_mem) ? 32'h00000013 : mem_inst_out; // Predict branch not taken, flush if taken
-    // assign inst = (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || inst_ex[6:0] == `OPC_JALR ? 32'h00000013 : mem_inst_out; // Predict branch taken, flush if not taken
-    assign inst = inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex ? 32'h00000013 : mem_inst_out; // Predict branch taken, flush if not taken
+    assign inst = pc_sel_ex || pc_sel_mem ? 32'h00000013 : mem_inst_out;
 
     wire [31:0] imm;
     imm_gen imm_gen (
@@ -211,10 +192,6 @@ module cpu #(
     wire [31:0] rd2_fwd;
     assign rd1_fwd = rd1_sel ? wd : rd1;
     assign rd2_fwd = rd2_sel ? wd : rd2;
-
-    // wire [31:0] jump_addr; 
-    assign jump_addr = inst[6:0] == `OPC_JALR ? rd1_fwd + imm : pc_id + imm;
-    // assign jump_addr = pc_id + imm;
 
     /* EX stage pipeline registers. */
     // reg [31:0] pc_ex;
@@ -361,7 +338,7 @@ module cpu #(
     
 
     /* Cycle Counter. */
-    reg [31:0] cycle_cnt;
+    // reg [31:0] cycle_cnt;
     always @(posedge clk) begin
       if (rst) begin
         cycle_cnt <= 0;
