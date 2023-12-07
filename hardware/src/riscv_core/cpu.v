@@ -4,12 +4,31 @@
 module cpu #(
     parameter CPU_CLOCK_FREQ = 50_000_000,
     parameter RESET_PC = 32'h4000_0000,
-    parameter BAUD_RATE = 115200
+    parameter BAUD_RATE = 115200,
+    
+    parameter N_VOICES = 1
 ) (
     input clk,
     input rst,
+
+    input fifo_empty,
+    input [3:0] fifo_dout,
+    output fifo_rd_en,
+
+    input [1:0] switches,
+    output [5:0] leds,
+
     input serial_in,
-    output serial_out
+    output serial_out,
+
+    output [N_VOICES-1:0] [23:0] carrier_fcws,
+    output [23:0] mod_fcw,
+    output [4:0] mod_shift,
+    output [N_VOICES-1:0] note_en,
+    output [4:0] synth_shift,
+    output req,
+    input ack
+
 );
     // BIOS Memory
     // Synchronous read: read takes one cycle
@@ -126,26 +145,52 @@ module cpu #(
     reg pc_sel_mem_old; // new
 
     wire [31:0] mem_data_out;
-    wire [31:0] data_resource_out;
+    // wire [31:0] data_resource_out;
+    reg [31:0] data_resource_out;
 
     reg [31:0] cycle_cnt;
     
 
     /* Instruction Fetch/PC "Stage". */
+
+    // reg [31:0] pc;
+    // always @(posedge clk) begin
+    //   if (rst) begin
+    //     pc <= RESET_PC;
+    //   end else begin
+    //     // pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
+    //     if (inst[6:0] == `OPC_BRANCH || inst[6:0] == `OPC_JAL) begin
+    //       pc <= pc_id + imm + 4;
+    //     end else if (inst_ex[6:0] == `OPC_JALR) begin
+    //       pc <= alu_out;
+    //     end else if ((inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex)) begin
+    //       pc <= pc_ex + 4;
+    //     end else begin
+    //       pc <= pc + 4;
+    //     end
+    //     // if (inst[6:0] == `OPC_JAL) begin
+    //     //   pc <= pc_id + imm + 4;
+    //     // end else if (inst_ex[6:0] != `OPC_JAL && pc_sel_ex) begin
+    //     //   pc <= alu_out;
+    //     // end else begin
+    //     //   pc <= pc + 4;
+    //     // end
+    //   end
+    // end
+
     reg [31:0] pc;
-    always @(posedge clk) begin
+    always @(*) begin
       if (rst) begin
-        pc <= RESET_PC;
+        pc = RESET_PC;
       end else begin
-        // pc <= pc_sel_ex ? alu_out : pc + 4; // Predict branch not taken, flush if taken
         if (inst[6:0] == `OPC_BRANCH || inst[6:0] == `OPC_JAL) begin
-          pc <= pc_id + imm + 4;
+          pc = pc_id + imm;
         end else if (inst_ex[6:0] == `OPC_JALR) begin
-          pc <= alu_out;
+          pc = alu_out;
         end else if ((inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex)) begin
-          pc <= pc_ex + 4;
+          pc = pc_ex + 4;
         end else begin
-          pc <= pc + 4;
+          pc = pc_id + 4;
         end
       end
     end
@@ -159,12 +204,8 @@ module cpu #(
       end
     end
 
-    wire [31:0] predicted_pc;
-    assign predicted_pc = inst[6:0] == `OPC_BRANCH || inst[6:0] == `OPC_JAL ? pc_id + imm : pc;
-
-    assign bios_addra = predicted_pc[13:2];
-    assign imem_addrb = predicted_pc[15:2];
-
+    assign bios_addra = pc[13:2];
+    assign imem_addrb = pc[15:2];
 
     /* ID stage pipeline registers. */
     // reg [31:0] pc_id;
@@ -173,7 +214,7 @@ module cpu #(
         pc_id <= RESET_PC;
       end else begin
         // pc_id <= pc;
-        pc_id <= predicted_pc;
+        pc_id <= pc;
       end
     end
 
@@ -191,19 +232,14 @@ module cpu #(
     wire [31:0] mem_inst_out;
     // wire [31:0] inst;
     assign mem_inst_out = pc_id[30] ? bios_douta : imem_doutb;
-    // assign inst = pc_sel_ex || pc_sel_mem ? 32'h00000013 : mem_inst_out;
-
     
     wire [6:0] opcode_ex;
     wire [6:0] opcode_mem;
     assign opcode_ex = inst_ex[6:0];
     assign opcode_mem = inst_mem[6:0];
     wire flush;
-    // assign flush = (inst_ex[6:0] == `OPC_BRANCH && !pc_sel_ex) || (inst_mem[6:0] == `OPC_BRANCH && !pc_sel_mem) || inst_ex[6:0] == `OPC_JALR || inst_mem[6:0] == `OPC_JALR || inst_ex[6:0] == `OPC_JAL || inst_mem[6:0] == `OPC_JAL;
-    // flush twice for branch mispredict + jalr, flush once for jal
-    assign flush = (opcode_ex == `OPC_BRANCH && !pc_sel_ex) || (opcode_mem == `OPC_BRANCH && !pc_sel_mem) || opcode_ex == `OPC_JALR || opcode_mem == `OPC_JALR;
-
-    assign inst = cycle_cnt == 0 || flush ? 32'h00000013 : mem_inst_out;
+    assign flush = (opcode_ex == `OPC_BRANCH && !pc_sel_ex) || opcode_ex == `OPC_JALR;
+    assign inst = flush ? 32'h00000013 : mem_inst_out;
 
     // wire [31:0] imm;
     imm_gen imm_gen (
@@ -318,6 +354,7 @@ module cpu #(
       .breq(breq),
       .brlt(brlt)
     );
+
 
     assign uart_rx_data_out_ready = inst_ex[6:0] == `OPC_LOAD && alu_out == 32'h80000004;
     assign uart_tx_data_in_valid = inst_ex[6:0] == `OPC_STORE && alu_out == 32'h80000008;
@@ -436,7 +473,172 @@ module cpu #(
 
     //wire [31:0] data_resource_out;
     //assign data_resource_out = io_sel == 0 ? mem_data_out : (io_sel == 1 ? uart_control_out_32 : (io_sel == 2 ? uart_rx_data_out_32 : (io_sel == 3 ? cycle_cnt : io_sel == 4 ? inst_cnt : 0))); // add IO logic later (UART, cycle count, inst count)
-    assign data_resource_out = io_sel == 0 ? mem_data_out : (io_sel == 1 ? uart_control_out_32 : (io_sel == 2 ? uart_rx_data_out_32 : (io_sel == 3 ? cycle_cnt : (io_sel == 4 ? inst_cnt : 0))));
+    // assign data_resource_out = io_sel == 0 ? mem_data_out : (io_sel == 1 ? uart_control_out_32 : (io_sel == 2 ? uart_rx_data_out_32 : (io_sel == 3 ? cycle_cnt : (io_sel == 4 ? inst_cnt : 0))));
+
+    // reg [31:0] data_resource_out;
+    reg ack_reg;
+    always @(posedge clk) begin
+      if (rst) begin
+        ack_reg <= 0;
+      end else begin
+        ack_reg <= ack;
+      end
+    end
+
+    always @(*) begin
+      if (alu_mem[31] == 0) begin
+        data_resource_out = mem_data_out;
+      end else if (alu_mem == 32'h80000000) begin
+        data_resource_out = uart_control_out_32;
+      end else if (alu_mem == 32'h80000004) begin
+        data_resource_out = uart_rx_data_out_32;
+      end else if (alu_mem == 32'h80000010) begin
+        data_resource_out = cycle_cnt;
+      end else if (alu_mem == 32'h80000014) begin
+        data_resource_out = inst_cnt;
+      end else if (alu_mem == 32'h80000020) begin
+        data_resource_out = {31'b0, fifo_empty};
+      end else if (alu_mem == 32'h80000024) begin
+        data_resource_out = {29'b0, fifo_dout[3:1]};
+      end else if (alu_mem == 32'h80000028) begin
+        data_resource_out = {30'b0, switches};
+      end else if (alu_mem == 32'h80000214) begin
+        data_resource_out = {31'b0, ack_reg};
+      end else begin
+        data_resource_out = 0;
+      end
+    end
+
+    reg [5:0] leds_current;
+    wire led_wen;
+    assign leds = leds_current;
+    assign led_wen = inst_ex[6:0] == `OPC_STORE && alu_out == 32'h80000030;
+
+    always @(posedge clk) begin
+      if (rst) begin
+        leds_current <= 6'b0;
+      end else if (led_wen) begin
+        leds_current <= {26'b0, rs2_ex_fwd[5:0]};
+      end else begin
+        leds_current <= leds_current;
+      end
+    end
+
+    assign fifo_rd_en = inst_ex[6:0] == `OPC_LOAD && alu_out == 32'h80000024;
+
+    reg [N_VOICES-1:0] [23:0] car_fcw_reg;
+    reg [23:0] mod_fcw_reg;
+    reg [4:0] mod_shift_reg;
+    reg [N_VOICES-1:0] note_en_reg;
+    reg [4:0] synth_shift_reg;
+    reg req_reg;
+
+    assign carrier_fcws = car_fcw_reg;
+    assign mod_fcw = mod_fcw_reg;
+    assign mod_shift = mod_shift_reg;
+    assign note_en = note_en_reg;
+    assign synth_shift = synth_shift_reg;
+    assign req = req_reg;
+
+    reg [31:0] debug;
+
+    always @(posedge clk) begin
+      if (rst) begin
+        car_fcw_reg <= 0;
+        mod_fcw_reg <= 0;
+        mod_shift_reg <= 0;
+        note_en_reg <= 0;
+        synth_shift_reg <= 0;
+        req_reg <= 0;
+        debug <= 32'h61C;
+      end else if (inst_ex[6:0] == `OPC_STORE) begin
+        if (alu_out == 32'h80000100) begin
+          car_fcw_reg <= rs2_ex_fwd[23:0];
+
+          debug <= 32'h100;
+
+          // car_fcw_reg <= car_fcw_reg;
+          mod_fcw_reg <= mod_fcw_reg;
+          mod_shift_reg <= mod_shift_reg;
+          note_en_reg <= note_en_reg;
+          synth_shift_reg <= synth_shift_reg;
+          req_reg <= req_reg;
+        end else if (alu_out == 32'h80000200) begin
+          mod_fcw_reg <= rs2_ex_fwd[23:0];
+
+          debug <= 32'h200;
+
+          car_fcw_reg <= car_fcw_reg;
+          // mod_fcw_reg <= mod_fcw_reg;
+          mod_shift_reg <= mod_shift_reg;
+          note_en_reg <= note_en_reg;
+          synth_shift_reg <= synth_shift_reg;
+          req_reg <= req_reg;
+        end else if (alu_out == 32'h80000204) begin
+          mod_shift_reg <= rs2_ex_fwd[4:0];
+
+          debug <= 32'h4;
+
+          car_fcw_reg <= car_fcw_reg;
+          mod_fcw_reg <= mod_fcw_reg;
+          // mod_shift_reg <= mod_shift_reg;
+          note_en_reg <= note_en_reg;
+          synth_shift_reg <= synth_shift_reg;
+          req_reg <= req_reg;
+        end else if (alu_out == 32'h80000208) begin
+          note_en_reg <= rs2_ex_fwd[N_VOICES-1:0];
+
+          debug <= 32'h8;
+
+          car_fcw_reg <= car_fcw_reg;
+          mod_fcw_reg <= mod_fcw_reg;
+          mod_shift_reg <= mod_shift_reg;
+          // note_en_reg <= note_en_reg;
+          synth_shift_reg <= synth_shift_reg;
+          req_reg <= req_reg;
+        end else if (alu_out == 32'h8000020C) begin
+          synth_shift_reg <= synth_shift[4:0];
+
+          debug <= 32'hC;
+
+          car_fcw_reg <= car_fcw_reg;
+          mod_fcw_reg <= mod_fcw_reg;
+          mod_shift_reg <= mod_shift_reg;
+          note_en_reg <= note_en_reg;
+          // synth_shift_reg <= synth_shift_reg;
+          req_reg <= req_reg;
+        end else if (alu_out == 32'h80000210) begin
+          req_reg <= rs2_ex_fwd[0];
+
+          debug <= 32'h10;
+
+          car_fcw_reg <= car_fcw_reg;
+          mod_fcw_reg <= mod_fcw_reg;
+          mod_shift_reg <= mod_shift_reg;
+          note_en_reg <= note_en_reg;
+          synth_shift_reg <= synth_shift_reg;
+          // req_reg <= req_reg;
+        end else begin
+          car_fcw_reg <= car_fcw_reg;
+          mod_fcw_reg <= mod_fcw_reg;
+          mod_shift_reg <= mod_shift_reg;
+          note_en_reg <= note_en_reg;
+          synth_shift_reg <= synth_shift_reg;
+          req_reg <= req_reg;
+          debug <= 32'hDEAD;
+        end
+      end else begin
+        car_fcw_reg <= car_fcw_reg;
+        mod_fcw_reg <= mod_fcw_reg;
+        mod_shift_reg <= mod_shift_reg;
+        note_en_reg <= note_en_reg;
+        synth_shift_reg <= synth_shift_reg;
+        req_reg <= req_reg;
+        debug <= 32'hCAFE;
+      end
+    end
+
+
 
     assign wd = wb_sel == 0 ? alu_mem : (wb_sel == 1 ? data_resource_out : pc_mem + 4);
     assign wa = inst_mem[11:7];
@@ -453,5 +655,50 @@ module cpu #(
     assign imem_ena = inst_ex[6:0] == `OPC_STORE && alu_out[31:29] == 3'b001 && pc_ex[30] == 1;
     assign bios_ena = pc[30] == 1;
     assign bios_enb = alu_out[30] == 1;
+
+
+
+    // SystemVerilog Assertions
+
+    // property pc_reset;
+    //   @(posedge clk) rst |-> pc == RESET_PC;
+    // endproperty
+    // assert property(pc_reset);
+
+    // property we_mask_byte;
+    //   @(posedge clk) disable iff (rst) inst_ex[6:0] == `OPC_STORE && inst_ex[14:12] == `FNC_SB |-> mem_wmask == (4'b1 << alu_out[1:0]);
+    // endproperty
+    // assert property(we_mask_byte);
+
+    // property we_mask_half;
+    //   @(posedge clk) disable iff (rst) inst_ex[6:0] == `OPC_STORE && inst_ex[14:12] == `FNC_SH |-> mem_wmask == (4'b11 << alu_out[1:0]);
+    // endproperty
+    // assert property(we_mask_half);
+
+    // property we_mask_word;
+    //   @(posedge clk) disable iff (rst) inst_ex[6:0] == `OPC_STORE && inst_ex[14:12] == `FNC_SW |-> mem_wmask == 4'b1111;
+    // endproperty
+    // assert property(we_mask_word);
+
+    // property upper_data_lb;
+    //   @(posedge clk) disable iff (rst) inst_mem[6:0] == `OPC_LOAD && inst_mem[14:12] == `FNC_LB |-> wd[31:8] == 24'h0 || wd[31:8] == 24'hFFFFFF;
+    // endproperty
+    // assert property(upper_data_lb);
+
+    // property upper_data_lh;
+    //   @(posedge clk) disable iff (rst) inst_mem[6:0] == `OPC_LOAD && inst_mem[14:12] == `FNC_LH |-> wd[31:16] == 16'h0 || wd[31:8] == 26'hFFFF;
+    // endproperty
+    // assert property(upper_data_lh);
+
+    // property zero_reg1;
+    //   @(posedge clk) ra1 == 0 |-> rd1 == 0;
+    // endproperty
+    // assert property(zero_reg1);
+
+    // property zero_reg2;
+    //   @(posedge clk) ra2 == 0 |-> rd2 == 0;
+    // endproperty
+    // assert property(zero_reg2);
+
     
 endmodule

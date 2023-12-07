@@ -50,7 +50,6 @@ module z1top #(
     // Use IOBs to drive the PWM output
     (* IOB = "true" *) reg pwm_iob;
     wire pwm_out; // TODO: connect this wire to your DAC
-    assign pwm_out = 1'b0;
     assign AUD_PWM = pwm_iob;
     assign AUD_SD = 1'b1;
     always @(posedge pwm_clk) begin
@@ -62,6 +61,7 @@ module z1top #(
     synchronizer rst_pwm_sync (.async_signal(buttons_pressed[0]), .sync_signal(reset_button_pwm_domain), .clk(pwm_clk));
     assign pwm_rst = reset_button_pwm_domain || ~pwm_clk_locked;
 
+      
     clocks #(
         .CPU_CLK_CLKFBOUT_MULT(CPU_CLK_CLKFBOUT_MULT),
         .CPU_CLK_DIVCLK_DIVIDE(CPU_CLK_DIVCLK_DIVIDE),
@@ -84,6 +84,38 @@ module z1top #(
         .out(buttons_pressed)
     );
 
+    wire fifo_empty;
+    wire fifo_rd_en;
+    wire [3:0] fifo_dout;
+
+    fifo #(
+        .WIDTH(4),
+        .DEPTH(8)
+    ) fifo (
+        .clk(cpu_clk),
+        .rst(cpu_reset),
+        .wr_en(buttons_pressed > 0),
+        .din(buttons_pressed),
+        .full(),
+        .rd_en(fifo_rd_en),
+        .dout(fifo_dout),
+        .empty(fifo_empty)
+    );
+
+    wire [N_VOICES-1:0] [23:0] cpu_carrier_fcws;
+    wire [23:0] cpu_mod_fcw;
+    wire [4:0] cpu_mod_shift;
+    wire [N_VOICES-1:0] cpu_note_en;
+    wire [4:0] cpu_synth_shift;
+    wire cpu_req;
+    
+    wire cpu_ack;
+    wire [N_VOICES-1:0] [23:0] synth_carrier_fcws;
+    wire [23:0] synth_mod_fcw;
+    wire [4:0] synth_mod_shift;
+    wire [N_VOICES-1:0] synth_note_en;
+    wire [4:0] synth_synth_shift;
+
     cpu #(
         .CPU_CLOCK_FREQ(CPU_CLOCK_FREQ),
         .RESET_PC(RESET_PC),
@@ -91,8 +123,20 @@ module z1top #(
     ) cpu (
         .clk(cpu_clk),
         .rst(cpu_reset),
+        .fifo_empty(fifo_empty),
+        .fifo_dout(fifo_dout),
+        .fifo_rd_en(fifo_rd_en),
+        .switches(SWITCHES),
+        .leds(LEDS),
         .serial_out(cpu_tx),
-        .serial_in(cpu_rx)
+        .serial_in(cpu_rx),
+        .carrier_fcws(cpu_carrier_fcws),
+        .mod_fcw(cpu_mod_fcw),
+        .mod_shift(cpu_mod_shift),
+        .note_en(cpu_note_en),
+        .synth_shift(cpu_synth_shift),
+        .req(cpu_req),
+        .ack(cpu_ack)
     );
 
     cpu_to_synth_cdc #(
@@ -100,48 +144,54 @@ module z1top #(
     ) cdc (
         .cpu_clk(cpu_clk),
         .synth_clk(pwm_clk),
-        .cpu_carrier_fcws(24'd0),
-        .cpu_mod_fcw(24'd0),
-        .cpu_mod_shift(5'd0),
-        .cpu_note_en(1'd0),
-        .cpu_synth_shift(5'd0),
-        .cpu_req(1'd0),
-        .cpu_ack(),
+        .cpu_carrier_fcws(cpu_carrier_fcws),
+        .cpu_mod_fcw(cpu_mod_fcw),
+        .cpu_mod_shift(cpu_mod_shift),
+        .cpu_note_en(cpu_note_en),
+        .cpu_synth_shift(cpu_synth_shift),
+        .cpu_req(cpu_req),
+        .cpu_ack(cpu_ack),
 
-        .synth_carrier_fcws(),
-        .synth_mod_fcw(),
-        .synth_mod_shift(),
-        .synth_note_en(),
-        .synth_synth_shift()
+        .synth_carrier_fcws(synth_carrier_fcws),
+        .synth_mod_fcw(synth_mod_fcw),
+        .synth_mod_shift(synth_mod_shift),
+        .synth_note_en(synth_note_en),
+        .synth_synth_shift(synth_synth_shift)
     );
 
+    // TODO ? (below, fill in inputs/outputs)
+
+    wire [13:0] sample;
+    wire sample_valid, sample_ready;
+    wire [9:0] scaled_sample;
     synth #(
         .N_VOICES(N_VOICES)
     ) synth (
         .clk(pwm_clk),
         .rst(pwm_rst),
-        .carrier_fcws(24'd0),
-        .mod_fcw(24'd0),
-        .mod_shift(5'd0),
-        .note_en(1'd0),
-        .sample(),
-        .sample_valid(),
-        .sample_ready(1'd0)
+        .carrier_fcws(synth_carrier_fcws),
+        .mod_fcw(synth_mod_fcw),
+        .mod_shift(synth_mod_shift),
+        .note_en(synth_note_en),
+        .sample(sample),
+        .sample_valid(sample_valid),
+        .sample_ready(sample_ready)
     );
 
     scaler scaler (
         .clk(pwm_clk),
-        .synth_shift(5'd0),
-        .synth_out(14'd0),
-        .code()
+        .synth_shift(5'b0),
+        .synth_out(sample),
+        .code(scaled_sample)
     );
 
     sampler sampler (
         .clk(pwm_clk),
         .rst(pwm_rst),
-        .synth_valid(1'd0),
-        .synth_ready(),
-        .scaled_synth_code(10'd0),
+        .synth_valid(sample_valid),
+        .synth_ready(sample_ready),
+        .scaled_synth_code(scaled_sample),
         .pwm_out(pwm_out)
     );
+    
 endmodule
